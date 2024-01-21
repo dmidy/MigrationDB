@@ -1,45 +1,108 @@
 package org.example.dao;
 
+import org.example.db.Database;
+import org.example.model.Client;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class ClientService {
 
-    private final Map<Long, Client> clients = new HashMap<>();
-    private long idCounter = 1;
-
     public long create(String name) {
         validateName(name);
-        long clientId = idCounter++;
-        Client client = new Client(clientId, name);
-        clients.put(clientId, client);
-        return clientId;
+
+        String sql = "INSERT INTO clients (name) VALUES (?)";
+        try (Connection connection = Database.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql, PreparedStatement.RETURN_GENERATED_KEYS)) {
+
+            statement.setString(1, name);
+            statement.executeUpdate();
+
+            try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    return generatedKeys.getLong(1);
+                } else {
+                    throw new SQLException("Creating client failed, no ID obtained.");
+                }
+            }
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to create client", e);
+        }
     }
 
     public String getById(long id) {
         validateClientId(id);
-        Client client = clients.get(id);
-        return (client != null) ? client.getName() : null;
+
+        String sql = "SELECT name FROM clients WHERE id = ?";
+        try (Connection connection = Database.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setLong(1, id);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getString("name") : null;
+            }
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to get client by ID", e);
+        }
     }
 
     public void setName(long id, String name) {
         validateClientId(id);
         validateName(name);
-        Client client = clients.get(id);
-        if (client != null) {
-            client.setName(name);
+
+        String sql = "UPDATE clients SET name = ? WHERE id = ?";
+        try (Connection connection = Database.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, name);
+            statement.setLong(2, id);
+            statement.executeUpdate();
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to update client name", e);
         }
     }
 
     public void deleteById(long id) {
         validateClientId(id);
-        clients.remove(id);
+
+        String sql = "DELETE FROM clients WHERE id = ?";
+        try (Connection connection = Database.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setLong(1, id);
+            statement.executeUpdate();
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to delete client by ID", e);
+        }
     }
 
     public List<Client> listAll() {
-        return new ArrayList<>(clients.values());
+        List<Client> result = new ArrayList<>();
+
+        String sql = "SELECT * FROM clients";
+        try (Connection connection = Database.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+
+            while (resultSet.next()) {
+                long id = resultSet.getLong("id");
+                String name = resultSet.getString("name");
+                result.add(new Client(id, name));
+            }
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to list all clients", e);
+        }
+
+        return result;
     }
 
     private void validateName(String name) {
@@ -49,30 +112,8 @@ public class ClientService {
     }
 
     private void validateClientId(long id) {
-        if (!clients.containsKey(id)) {
-            throw new IllegalArgumentException("Client with given id does not exist");
-        }
-    }
-
-    public static class Client {
-        private final long id;
-        private String name;
-
-        public Client(long id, String name) {
-            this.id = id;
-            this.name = name;
-        }
-
-        public long getId() {
-            return id;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        public void setName(String name) {
-            this.name = name;
+        if (id <= 0) {
+            throw new IllegalArgumentException("Invalid client ID");
         }
     }
 }
